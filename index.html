@@ -22,7 +22,7 @@
   .overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
     background:rgba(5,6,10,.82); z-index:10; }
   .overlay.hidden { display:none; }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:24px 28px; width:min(440px, 92vw); }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:24px 28px; width:min(460px, 92vw); }
   .card h1 { margin:0 0 4px; font-size:34px; letter-spacing:.14em; color:var(--acc); text-align:center; }
   .card p.sub { margin:0 0 18px; text-align:center; color:var(--dim); font-size:13px; }
   .row { display:flex; align-items:center; justify-content:space-between; margin:10px 0; gap:12px; }
@@ -44,12 +44,12 @@
   <canvas id="cv"></canvas>
   <div id="hud">
     <div id="title">PENTACUBE</div>
-    <div class="box"><div class="k">分數</div><div class="v" id="hScore">0</div></div>
-    <div class="box"><div class="k">等級</div><div class="v" id="hLevel">0</div></div>
-    <div class="box"><div class="k">已放方塊數</div><div class="v sm" id="hCubes">0</div></div>
-    <div class="box"><div class="k">最高分</div><div class="v sm" id="hHigh">0</div></div>
-    <div class="box"><div class="k">設定</div><div class="v sm" id="hSetup"></div></div>
-    <div class="box" id="keys">
+    <div class="box"><div class="k" data-t="score">分數</div><div class="v" id="hScore">0</div></div>
+    <div class="box"><div class="k" data-t="level">等級</div><div class="v" id="hLevel">0</div></div>
+    <div class="box"><div class="k" data-t="cubes">已放方塊數</div><div class="v sm" id="hCubes">0</div></div>
+    <div class="box"><div class="k" data-t="high">最高分</div><div class="v sm" id="hHigh">0</div></div>
+    <div class="box"><div class="k" data-t="setup">設定</div><div class="v sm" id="hSetup"></div></div>
+    <div class="box" id="keys" data-t="keys">
       <b>Q W E</b> ／ <b>A S D</b>　旋轉<br>
       <b>方向鍵</b>　平移<br>
       <b>空白鍵</b>　直落<br>
@@ -61,15 +61,15 @@
 <div class="overlay" id="menu">
   <div class="card">
     <h1>PENTACUBE</h1>
-    <p class="sub">往井裡堆積木，填滿一層就消掉</p>
-    <div class="row dims"><label>井（寬×高×深）</label>
+    <p class="sub" data-t="tagline">往井裡堆積木，填滿一層就消掉</p>
+    <div class="row dims"><label data-t="pit">井（寬×高×深）</label>
       <span style="white-space:nowrap"><select id="sW"></select> × <select id="sH"></select> × <select id="sD"></select></span></div>
-    <div class="row"><label>積木組</label>
-      <select id="sSet"><option value="0">平面</option><option value="1">基本</option><option value="2">進階（全部積木）</option></select></div>
-    <div class="row"><label>起始等級</label><select id="sLv"></select></div>
-    <div class="row"><label>音效</label><select id="sSnd"><option value="1">開</option><option value="0">關</option></select></div>
-    <button class="go" id="btnStart">開始</button>
-    <div class="help">
+    <div class="row"><label data-t="set">積木組</label>
+      <select id="sSet"><option value="0" data-t="set0">平面</option><option value="1" data-t="set1">基本</option><option value="2" data-t="set2">進階（全部積木）</option></select></div>
+    <div class="row"><label data-t="startLevel">起始等級</label><select id="sLv"></select></div>
+    <div class="row"><label data-t="sound">音效</label><select id="sSnd"><option value="1" data-t="on">開</option><option value="0" data-t="off">關</option></select></div>
+    <button class="go" id="btnStart" data-t="start">開始</button>
+    <div class="help" data-t="help">
       <b>Q / A</b> 繞水平軸前後翻轉　<b>W / S</b> 繞垂直軸左右翻轉　<b>E / D</b> 在平面上逆／順時針轉<br>
       <b>方向鍵</b>（或數字鍵盤，含斜向）平移　<b>空白鍵</b> 直落到底<br>
       越早按空白鍵直落、一次消越多層，分數越高；清空整口井另有加分。
@@ -82,13 +82,13 @@
     <h1 id="overTitle">遊戲結束</h1>
     <div class="big" id="overScore">0</div>
     <p class="sub" id="overInfo"></p>
-    <button class="go" id="btnAgain">再玩一次</button>
-    <p class="sub" style="margin-top:12px">按 Enter 再玩一次，按 Esc 回選單</p>
+    <button class="go" id="btnAgain" data-t="again">再玩一次</button>
+    <p class="sub" style="margin-top:12px" data-t="overHint">按 Enter 再玩一次，按 Esc 回選單</p>
   </div>
 </div>
 
 <div class="overlay hidden" id="pause">
-  <div class="card center"><h1>暫停</h1><p class="sub">按 P 繼續</p></div>
+  <div class="card center"><h1 data-t="paused">暫停</h1><p class="sub" data-t="resume">按 P 繼續</p></div>
 </div>
 
 <script>
@@ -101,6 +101,26 @@ if (location.hostname.endsWith('github.io')) {
   sc.src = 'https://gc.zgo.at/count.js';
   sc.dataset.goatcounter = `https://${GOATCOUNTER}.goatcounter.com/count`;
   document.head.appendChild(sc);
+}
+
+// ---------------------------------------------------------------- 語系：中文語系看中文，其餘看英文（?lang=en / ?lang=zh 可強制）
+const LANG_Q = new URLSearchParams(location.search).get('lang');
+const ZH = LANG_Q ? LANG_Q.toLowerCase().startsWith('zh') : (navigator.language || '').toLowerCase().startsWith('zh');
+const L = (zh, en) => ZH ? zh : en;
+const EN = {
+  score: 'SCORE', level: 'LEVEL', cubes: 'CUBES PLAYED', high: 'HIGH SCORE', setup: 'SETUP',
+  keys: '<b>Q W E</b> / <b>A S D</b>&nbsp; rotate<br><b>Arrows</b>&nbsp; move<br><b>Space</b>&nbsp; drop<br><b>P</b> pause &nbsp;<b>M</b> mute &nbsp;<b>Esc</b> menu',
+  tagline: 'Stack blocks in the pit. Fill a layer to clear it.',
+  pit: 'Pit (W × H × D)', set: 'Block set', set0: 'Flat', set1: 'Basic', set2: 'Extended (all blocks)',
+  startLevel: 'Starting level', sound: 'Sound', on: 'On', off: 'Off', start: 'START',
+  help: '<b>Q / A</b> tip the block forward / back &nbsp;<b>W / S</b> turn it left / right &nbsp;<b>E / D</b> spin it counter-clockwise / clockwise<br>'
+    + '<b>Arrow keys</b> (or numpad, diagonals included) move &nbsp;<b>Space</b> drops to the bottom<br>'
+    + 'Drop early and clear several layers at once for a higher score. Emptying the whole pit earns a bonus.',
+  again: 'PLAY AGAIN', overHint: 'Enter to play again, Esc for the menu', paused: 'Paused', resume: 'Press P to resume',
+};
+if (!ZH) {
+  document.documentElement.lang = 'en';
+  document.querySelectorAll('[data-t]').forEach(el => { el.innerHTML = EN[el.dataset.t]; });
 }
 
 // ---------------------------------------------------------------- 積木定義
@@ -194,7 +214,7 @@ const LINE_BASE = [762.5, 875.5, 2886.25];
 const DEPTH_F = { 6: 1.557692, 7: 1.367521, 8: 1.217949, 9: 1.100427, 10: 1.0, 11: 0.918803, 12: 0.852564,
   13: 0.788996, 14: 0.737714, 15: 0.691774, 16: 0.651709, 17: 0.614850, 18: 0.583868 };
 const TIME_BASE = 5.51, TIME_FACTOR = 0.64, DROP_TIME = 0.16, RED_TIME = 0.05, ROT_TIME = 0.12;
-const SET_NAME = ['平面', '基本', '進階'];
+const SET_NAME = L(['平面', '基本', '進階'], ['Flat', 'Basic', 'Extended']);
 
 // ---------------------------------------------------------------- 旋轉矩陣
 const ROT = {
@@ -285,10 +305,12 @@ function gameOver() {
   snd.over();
   const isHigh = score > highScore;
   if (isHigh) { highScore = score; localStorage.setItem(hsKey(), String(score)); }
-  $('overTitle').textContent = isHigh ? '新紀錄！' : '遊戲結束';
+  $('overTitle').textContent = isHigh ? L('新紀錄！', 'New record!') : L('遊戲結束', 'Game over');
   $('overScore').textContent = score.toLocaleString();
   const l = stats.lines;
-  $('overInfo').innerHTML = `等級 ${level}　方塊 ${cubesPlayed}<br>消 1 層 ×${l[1]}　2 層 ×${l[2]}　3 層 ×${l[3]}　4 層 ×${l[4]}　5 層 ×${l[5]}<br>清空全井 ×${stats.empty}`;
+  $('overInfo').innerHTML = L(
+    `等級 ${level}　方塊 ${cubesPlayed}<br>消 1 層 ×${l[1]}　2 層 ×${l[2]}　3 層 ×${l[3]}　4 層 ×${l[4]}　5 層 ×${l[5]}<br>清空全井 ×${stats.empty}`,
+    `Level ${level} · ${cubesPlayed} cubes<br>Layers cleared at once: 1 ×${l[1]} · 2 ×${l[2]} · 3 ×${l[3]} · 4 ×${l[4]} · 5 ×${l[5]}<br>Pit emptied ×${stats.empty}`);
   $('over').classList.remove('hidden');
   updateHud();
 }
@@ -314,7 +336,8 @@ function lock() {
   cubesPlayed += sh.cubes.length;
   stats.lines[n]++; if (empty) stats.empty++;
   if (n > 0) {
-    popup = { text: empty ? `清空全井！ +${gain.toLocaleString()}` : `${n} 層　+${gain.toLocaleString()}`, t0: now };
+    const g = gain.toLocaleString();
+    popup = { text: empty ? L(`清空全井！ +${g}`, `Pit emptied! +${g}`) : L(`${n} 層　+${g}`, `${n} layer${n > 1 ? 's' : ''}  +${g}`), t0: now };
     empty ? snd.empty() : snd.line(n);
   } else snd.land();
   if (level < 10 && cubesPlayed >= (H * 15 + W * 15) * (level + 1)) {
