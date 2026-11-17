@@ -67,11 +67,13 @@
     <div class="row"><label data-t="set">積木組</label>
       <select id="sSet"><option value="0" data-t="set0">平面</option><option value="1" data-t="set1">基本</option><option value="2" data-t="set2">進階（全部積木）</option></select></div>
     <div class="row"><label data-t="startLevel">起始等級</label><select id="sLv"></select></div>
+    <div class="row"><label data-t="slide">直落後可平移</label><select id="sSlide"><option value="1" data-t="on">開</option><option value="0" data-t="off">關</option></select></div>
     <div class="row"><label data-t="sound">音效</label><select id="sSnd"><option value="1" data-t="on">開</option><option value="0" data-t="off">關</option></select></div>
     <button class="go" id="btnStart" data-t="start">開始</button>
     <div class="help" data-t="help">
       <b>Q / A</b> 繞水平軸前後翻轉　<b>W / S</b> 繞垂直軸左右翻轉　<b>E / D</b> 在平面上逆／順時針轉<br>
       <b>方向鍵</b>（或數字鍵盤，含斜向）平移　<b>空白鍵</b> 直落到底<br>
+      直落到底後有約 0.4 秒可以再平移（線框變黃），再按一次空白鍵立刻定位。<br>
       越早按空白鍵直落、一次消越多層，分數越高；清空整口井另有加分。
     </div>
   </div>
@@ -112,9 +114,10 @@ const EN = {
   keys: '<b>Q W E</b> / <b>A S D</b>&nbsp; rotate<br><b>Arrows</b>&nbsp; move<br><b>Space</b>&nbsp; drop<br><b>P</b> pause &nbsp;<b>M</b> mute &nbsp;<b>Esc</b> menu',
   tagline: 'Stack blocks in the pit. Fill a layer to clear it.',
   pit: 'Pit (W × H × D)', set: 'Block set', set0: 'Flat', set1: 'Basic', set2: 'Extended (all blocks)',
-  startLevel: 'Starting level', sound: 'Sound', on: 'On', off: 'Off', start: 'START',
+  startLevel: 'Starting level', slide: 'Slide after drop', sound: 'Sound', on: 'On', off: 'Off', start: 'START',
   help: '<b>Q / A</b> tip the block forward / back &nbsp;<b>W / S</b> turn it left / right &nbsp;<b>E / D</b> spin it counter-clockwise / clockwise<br>'
     + '<b>Arrow keys</b> (or numpad, diagonals included) move &nbsp;<b>Space</b> drops to the bottom<br>'
+    + 'After a drop you get about 0.4 s to slide the block (outline turns yellow); press Space again to lock at once.<br>'
     + 'Drop early and clear several layers at once for a higher score. Emptying the whole pit earns a bonus.',
   again: 'PLAY AGAIN', overHint: 'Enter to play again, Esc for the menu', paused: 'Paused', resume: 'Press P to resume',
 };
@@ -214,6 +217,7 @@ const LINE_BASE = [762.5, 875.5, 2886.25];
 const DEPTH_F = { 6: 1.557692, 7: 1.367521, 8: 1.217949, 9: 1.100427, 10: 1.0, 11: 0.918803, 12: 0.852564,
   13: 0.788996, 14: 0.737714, 15: 0.691774, 16: 0.651709, 17: 0.614850, 18: 0.583868 };
 const TIME_BASE = 5.51, TIME_FACTOR = 0.64, DROP_TIME = 0.16, RED_TIME = 0.05, ROT_TIME = 0.12;
+const SLIDE_TIME = 0.4, SLIDE_MAX = 4;   // 直落後可平移的緩衝時間，以及每塊積木最多可延長的次數
 const SET_NAME = L(['平面', '基本', '進階'], ['Flat', 'Basic', 'Extended']);
 
 // ---------------------------------------------------------------- 旋轉矩陣
@@ -239,7 +243,7 @@ function rotF(axis, a) {
 // ---------------------------------------------------------------- 狀態
 const $ = id => document.getElementById(id);
 const cv = $('cv'), ctx = cv.getContext('2d');
-let W = 6, H = 5, D = 12, blockSet = 2, startLevel = 0, soundOn = true;
+let W = 6, H = 5, D = 12, blockSet = 2, startLevel = 0, soundOn = true, slideOn = true;
 let pit, piece, score, cubesPlayed, level, stepTime, highScore, possible;
 let state = 'menu';            // menu | play | pause | over
 let queue = [];
@@ -294,7 +298,7 @@ function spawn() {
   const shape = possible[Math.floor(Math.random() * possible.length)];
   piece = {
     shape, M: I3, pos: [W - shape.w, 0, 0], vpos: [W - shape.w, 0, 0],
-    mode: 'play', modeT: 0, stepStart: now, cursor: 0, dropPos: D - 1, dropped: false, lastKey: false, anim: null,
+    mode: 'play', modeT: 0, stepStart: now, cursor: 0, dropPos: D - 1, dropped: false, grace: 0, graceN: 0, anim: null,
   };
   queue = [];
   if (!free(piece.M, piece.pos)) gameOver();
@@ -356,7 +360,11 @@ function doMove(dx, dy) {
     else if (free(M, [p[0] + dx, p[1], p[2]])) t = [dx, 0];
     else if (free(M, [p[0], p[1] + dy, p[2]])) t = [0, dy];
   } else if (free(M, [p[0] + dx, p[1] + dy, p[2]])) t = [dx, dy];
-  if (t) piece.pos = [p[0] + t[0], p[1] + t[1], p[2]];
+  if (t) { piece.pos = [p[0] + t[0], p[1] + t[1], p[2]]; touch(); }
+}
+// 緩衝期間每成功移動一次，就重新計時（有次數上限）
+function touch() {
+  if (piece.grace && piece.graceN < SLIDE_MAX) { piece.graceN++; piece.grace = now + SLIDE_TIME; }
 }
 function doRotate(name) {
   const M2 = mul(ROT[name], piece.M);
@@ -369,12 +377,16 @@ function doRotate(name) {
   }
   piece.M = M2; piece.pos = pos;
   piece.anim = { axis: ROT_AXIS[name][0], sign: ROT_AXIS[name][1], t0: now };
+  touch();
   snd.rot();
 }
 function doDrop() {
-  if (piece.lastKey) return;
   let z = piece.pos[2];
   while (free(piece.M, [piece.pos[0], piece.pos[1], z + 1])) z++;
+  if (z === piece.pos[2] && piece.grace) {      // 已在底部的緩衝期再按一次：立刻定位
+    piece.grace = 0; piece.mode = 'red'; piece.modeT = now; return;
+  }
+  piece.grace = 0;
   piece.pos = [piece.pos[0], piece.pos[1], z];
   piece.mode = 'drop'; piece.modeT = now; piece.dropped = true;
   piece.cursor = Math.max(...placed(piece.M, piece.pos).map(q => q[2]));
@@ -396,11 +408,21 @@ function tick() {
   if (piece.mode === 'drop') {
     piece.stepStart = now;
     if (now - piece.modeT > DROP_TIME) {
-      if (!piece.lastKey) { piece.mode = 'red'; piece.modeT = now; }
-      else { piece.mode = 'play'; piece.stepStart = now - stepTime + 0.1; piece.lastKey = false; }
+      const g = slideOn ? SLIDE_TIME : (queue.length ? 0.1 : 0);
+      if (g > 0) { piece.mode = 'play'; piece.grace = now + g; }
+      else { piece.mode = 'red'; piece.modeT = now; }
     }
   }
   processQueue();
+  if (piece.mode === 'play' && piece.grace) {
+    piece.stepStart = now;
+    if (now >= piece.grace) {
+      piece.grace = 0;
+      const p = piece.pos;
+      if (free(piece.M, [p[0], p[1], p[2] + 1])) doDrop();      // 平移後下方有空間：繼續落下
+      else { piece.mode = 'red'; piece.modeT = now; }
+    }
+  }
   if (piece.mode === 'play' && now - piece.stepStart > stepTime) {
     piece.stepStart = now; piece.cursor++; piece.dropPos--;
     const maxZ = Math.max(...placed(piece.M, piece.pos).map(q => q[2]));
@@ -438,7 +460,7 @@ addEventListener('keydown', e => {
   e.preventDefault();
   if (!a) return;
   if (piece.mode === 'red') return;
-  if (piece.mode === 'drop') { if (a.t === 'drop') return; piece.lastKey = true; }
+  if (piece.mode === 'drop' && a.t === 'drop') return;
   if (queue.length < 6) queue.push(a);
 });
 
@@ -446,7 +468,7 @@ function togglePause() {
   if (state === 'play') { state = 'pause'; pauseAt = now; $('pause').classList.remove('hidden'); }
   else if (state === 'pause') {
     const dt = now - pauseAt;
-    piece.stepStart += dt; piece.modeT += dt; if (piece.anim) piece.anim.t0 += dt; if (popup) popup.t0 += dt;
+    piece.stepStart += dt; piece.modeT += dt; if (piece.grace) piece.grace += dt; if (piece.anim) piece.anim.t0 += dt; if (popup) popup.t0 += dt;
     state = 'play'; $('pause').classList.add('hidden');
   }
 }
@@ -534,7 +556,7 @@ function draw() {
     ctx.beginPath();
     for (const [a, b] of piece.shape.edges) line(tr(a), tr(b));
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    ctx.lineWidth = 2.2; ctx.strokeStyle = piece.mode === 'red' ? '#ff5a4d' : '#ffffff';
+    ctx.lineWidth = 2.2; ctx.strokeStyle = piece.mode === 'red' ? '#ff5a4d' : piece.grace ? '#ffd24a' : '#ffffff';
     ctx.stroke();
   }
 
@@ -612,11 +634,11 @@ function loadSettings() {
   let s = {};
   try { s = JSON.parse(localStorage.getItem('pentacube.settings') || '{}'); } catch (e) {}
   $('sW').value = s.W || 6; $('sH').value = s.H || 5; $('sD').value = s.D || 12;
-  $('sSet').value = s.set ?? 2; $('sLv').value = s.lv || 0; $('sSnd').value = s.snd ?? 1;
+  $('sSet').value = s.set ?? 2; $('sLv').value = s.lv || 0; $('sSnd').value = s.snd ?? 1; $('sSlide').value = s.slide ?? 1;
 }
 function saveSettings() {
   localStorage.setItem('pentacube.settings', JSON.stringify({
-    W: +$('sW').value, H: +$('sH').value, D: +$('sD').value, set: +$('sSet').value, lv: +$('sLv').value, snd: +$('sSnd').value }));
+    W: +$('sW').value, H: +$('sH').value, D: +$('sD').value, set: +$('sSet').value, lv: +$('sLv').value, snd: +$('sSnd').value, slide: +$('sSlide').value }));
 }
 // 進階組有 5 格長條，井的寬高至少要 5 才放得下
 function clampDims() {
@@ -626,7 +648,7 @@ function clampDims() {
 function startFromMenu() {
   clampDims(); saveSettings();
   W = +$('sW').value; H = +$('sH').value; D = +$('sD').value;
-  blockSet = +$('sSet').value; startLevel = +$('sLv').value; soundOn = $('sSnd').value === '1';
+  blockSet = +$('sSet').value; startLevel = +$('sLv').value; soundOn = $('sSnd').value === '1'; slideOn = $('sSlide').value === '1';
   if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
   if (ac && ac.state === 'suspended') ac.resume();
   document.activeElement && document.activeElement.blur();
