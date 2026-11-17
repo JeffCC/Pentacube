@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pentacube</title>
+<style>
+  :root { --bg:#0b0d14; --panel:#151a28; --line:#2a3350; --ink:#e8ecf8; --dim:#8a94b4; --acc:#ffb347; --grid:#2fbf71; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--ink);
+    font-family: "Segoe UI", "Microsoft JhengHei", system-ui, sans-serif; overflow:hidden; }
+  #stage { display:flex; height:100%; align-items:center; justify-content:center; gap:16px; padding:12px; }
+  canvas { display:block; background:#05060a; border:1px solid var(--line); border-radius:6px; }
+  #hud { width:200px; display:flex; flex-direction:column; gap:10px; }
+  .box { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:8px 12px; }
+  .box .k { font-size:12px; color:var(--dim); letter-spacing:.08em; }
+  .box .v { font-size:24px; font-variant-numeric:tabular-nums; text-align:right; font-weight:600; }
+  .box .v.sm { font-size:16px; }
+  #title { font-size:22px; font-weight:700; letter-spacing:.12em; color:var(--acc); text-align:center; }
+  #keys { font-size:12px; color:var(--dim); line-height:1.7; }
+  #keys b { color:var(--ink); font-weight:600; }
+  .overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    background:rgba(5,6,10,.82); z-index:10; }
+  .overlay.hidden { display:none; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:24px 28px; width:min(440px, 92vw); }
+  .card h1 { margin:0 0 4px; font-size:34px; letter-spacing:.14em; color:var(--acc); text-align:center; }
+  .card p.sub { margin:0 0 18px; text-align:center; color:var(--dim); font-size:13px; }
+  .row { display:flex; align-items:center; justify-content:space-between; margin:10px 0; gap:12px; }
+  .row label { color:var(--dim); font-size:14px; }
+  select, button { font:inherit; color:var(--ink); background:#0e1220; border:1px solid var(--line);
+    border-radius:6px; padding:6px 10px; }
+  .dims select { width:64px; }
+  button.go { width:100%; margin-top:14px; padding:12px; font-size:18px; font-weight:700; letter-spacing:.2em;
+    background:var(--acc); color:#1a1205; border:none; cursor:pointer; }
+  button.go:hover { filter:brightness(1.1); }
+  .help { margin-top:16px; font-size:12.5px; color:var(--dim); line-height:1.8; border-top:1px solid var(--line); padding-top:12px; }
+  .help b { color:var(--ink); }
+  .big { font-size:44px; font-weight:700; text-align:center; font-variant-numeric:tabular-nums; margin:8px 0; }
+  .center { text-align:center; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div id="hud">
+    <div id="title">PENTACUBE</div>
+    <div class="box"><div class="k">分數</div><div class="v" id="hScore">0</div></div>
+    <div class="box"><div class="k">等級</div><div class="v" id="hLevel">0</div></div>
+    <div class="box"><div class="k">已放方塊數</div><div class="v sm" id="hCubes">0</div></div>
+    <div class="box"><div class="k">最高分</div><div class="v sm" id="hHigh">0</div></div>
+    <div class="box"><div class="k">設定</div><div class="v sm" id="hSetup"></div></div>
+    <div class="box" id="keys">
+      <b>Q W E</b> ／ <b>A S D</b>　旋轉<br>
+      <b>方向鍵</b>　平移<br>
+      <b>空白鍵</b>　直落<br>
+      <b>P</b> 暫停　<b>M</b> 靜音　<b>Esc</b> 選單
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="menu">
+  <div class="card">
+    <h1>PENTACUBE</h1>
+    <p class="sub">往井裡堆積木，填滿一層就消掉</p>
+    <div class="row dims"><label>井（寬×高×深）</label>
+      <span style="white-space:nowrap"><select id="sW"></select> × <select id="sH"></select> × <select id="sD"></select></span></div>
+    <div class="row"><label>積木組</label>
+      <select id="sSet"><option value="0">平面</option><option value="1">基本</option><option value="2">進階（全部積木）</option></select></div>
+    <div class="row"><label>起始等級</label><select id="sLv"></select></div>
+    <div class="row"><label>音效</label><select id="sSnd"><option value="1">開</option><option value="0">關</option></select></div>
+    <button class="go" id="btnStart">開始</button>
+    <div class="help">
+      <b>Q / A</b> 繞水平軸前後翻轉　<b>W / S</b> 繞垂直軸左右翻轉　<b>E / D</b> 在平面上逆／順時針轉<br>
+      <b>方向鍵</b>（或數字鍵盤，含斜向）平移　<b>空白鍵</b> 直落到底<br>
+      越早按空白鍵直落、一次消越多層，分數越高；清空整口井另有加分。
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="over">
+  <div class="card">
+    <h1 id="overTitle">遊戲結束</h1>
+    <div class="big" id="overScore">0</div>
+    <p class="sub" id="overInfo"></p>
+    <button class="go" id="btnAgain">再玩一次</button>
+    <p class="sub" style="margin-top:12px">按 Enter 再玩一次，按 Esc 回選單</p>
+  </div>
+</div>
+
+<div class="overlay hidden" id="pause">
+  <div class="card center"><h1>暫停</h1><p class="sub">按 P 繼續</p></div>
+</div>
+
+<script>
+'use strict';
+// ---------------------------------------------------------------- 統計（僅 github.io）
+const GOATCOUNTER = 'digitalgenius';
+if (location.hostname.endsWith('github.io')) {
+  const sc = document.createElement('script');
+  sc.async = true;
+  sc.src = 'https://gc.zgo.at/count.js';
+  sc.dataset.goatcounter = `https://${GOATCOUNTER}.goatcounter.com/count`;
+  document.head.appendChild(sc);
+}
+
+// ---------------------------------------------------------------- 積木定義
+// 座標系：x 向螢幕左、y 向螢幕上、z 向井底。 [高分, 低分, 平面組, 基本組, 方塊]
+const S = (hi, lo, flat, basic, s) => ({ hi, lo, flat, basic, cubes: s.split(' ').map(t => [+t[0], +t[1], +t[2]]) });
+const SHAPES = [
+  S(156, 14, 1, 0, '000'),
+  S(156, 14, 1, 0, '000 010'),
+  S(307, 27, 1, 0, '000 010 020'),
+  S(307, 27, 0, 0, '000 010 020 030'),
+  S(624, 53, 0, 0, '000 010 020 030 040'),
+  S(307, 27, 1, 1, '000 100 110'),
+  S(156, 14, 1, 0, '000 100 010 110'),
+  S(461, 40, 1, 1, '000 100 200 110'),
+  S(461, 40, 1, 1, '100 200 010 110'),
+  S(307, 27, 1, 1, '000 100 200 210'),
+  S(921, 79, 0, 0, '000 100 200 210 220'),
+  S(921, 79, 0, 0, '200 010 110 210 220'),
+  S(921, 79, 0, 0, '200 010 110 210 120'),
+  S(921, 79, 0, 0, '100 200 110 020 120'),
+  S(780, 66, 0, 0, '000 100 110 210 220'),
+  S(780, 66, 0, 0, '000 100 110 120 130'),
+  S(921, 79, 0, 0, '100 010 110 120 130'),
+  S(1248, 105, 0, 0, '000 100 110 120 020'),
+  S(461, 40, 0, 0, '000 100 010 110 120'),
+  S(921, 79, 0, 0, '100 110 010 020 030'),
+  S(1402, 118, 0, 0, '100 010 110 210 120'),
+  S(1379, 131, 0, 0, '000 001 101 111 121'),
+  S(1379, 131, 0, 0, '100 001 101 011 021'),
+  S(965, 92, 0, 0, '010 011 101 111 121'),
+  S(965, 92, 0, 0, '110 101 111 121 021'),
+  S(965, 92, 0, 0, '110 001 101 111 121'),
+  S(1379, 131, 0, 0, '100 101 111 011 021'),
+  S(1379, 131, 0, 0, '000 001 011 111 121'),
+  S(1103, 105, 0, 0, '110 120 001 011 111'),
+  S(1103, 105, 0, 0, '010 020 101 111 011'),
+  S(1379, 131, 0, 0, '100 101 111 121 021'),
+  S(1379, 131, 0, 0, '000 001 011 021 121'),
+  S(552, 53, 0, 1, '100 101 001 011'),
+  S(552, 53, 0, 1, '100 101 011 111'),
+  S(552, 53, 0, 1, '100 001 101 111'),
+  S(827, 79, 0, 0, '110 011 111 101 121'),
+  S(461, 40, 0, 0, '100 001 101 011 111'),
+  S(1103, 105, 0, 0, '100 001 101 111 121'),
+  S(1103, 105, 0, 0, '100 110 011 111 121'),
+  S(1103, 105, 0, 0, '110 120 101 111 011'),
+  S(1379, 131, 0, 0, '000 110 001 011 111'),
+];
+for (const sh of SHAPES) {
+  sh.w = Math.max(...sh.cubes.map(c => c[0])) + 1;
+  sh.d = Math.max(...sh.cubes.map(c => c[2])) + 1;
+  sh.center = [sh.w - 1, 1, sh.d - 1];          // 旋轉中心（格點）
+  sh.edges = buildEdges(sh.cubes);
+}
+
+// 線框：只留外輪廓的稜線
+function buildEdges(cubes) {
+  const occ = new Set(cubes.map(c => c.join(',')));
+  const has = (x, y, z) => occ.has(x + ',' + y + ',' + z);
+  const seen = new Set(), out = [];
+  for (const [cx, cy, cz] of cubes) {
+    for (let a = 0; a < 3; a++) {
+      const b = (a + 1) % 3, c = (a + 2) % 3;
+      for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
+        const p = [cx, cy, cz]; p[b] += i; p[c] += j;
+        const key = a + ':' + p.join(',');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const q = [];
+        for (let u = -1; u <= 0; u++) for (let v = -1; v <= 0; v++) {
+          const t = p.slice(); t[b] += u; t[c] += v;
+          q.push(has(t[0], t[1], t[2]) ? 1 : 0);
+        }
+        const n = q[0] + q[1] + q[2] + q[3];
+        const diag = n === 2 && ((q[0] && q[3]) || (q[1] && q[2]));
+        if (n === 1 || n === 3 || diag) {
+          const e = p.slice(); e[a] += 1;
+          out.push([p, e]);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- 計分與速度參數（依原版量測值）
+const P_LEVEL = [0.066990, 0.139195, 0.219800, 0.308444, 0.403897, 0.507822, 0.619062, 0.738630, 0.865802, 1.0, 1.133333];
+const L_LEVEL = [0.096478, 0.163873, 0.242913, 0.328261, 0.422329, 0.518394, 0.630405, 0.747501, 0.867087, 1.0, 1.131653];
+const L_COUNT = [0, 1.0, 3.703372, 8.104827, 14.188325, 22.144941];
+const LINE_BASE = [762.5, 875.5, 2886.25];
+const DEPTH_F = { 6: 1.557692, 7: 1.367521, 8: 1.217949, 9: 1.100427, 10: 1.0, 11: 0.918803, 12: 0.852564,
+  13: 0.788996, 14: 0.737714, 15: 0.691774, 16: 0.651709, 17: 0.614850, 18: 0.583868 };
+const TIME_BASE = 5.51, TIME_FACTOR = 0.64, DROP_TIME = 0.16, RED_TIME = 0.05, ROT_TIME = 0.12;
+const SET_NAME = ['平面', '基本', '進階'];
+
+// ---------------------------------------------------------------- 旋轉矩陣
+const ROT = {
+  ax: [[1, 0, 0], [0, 0, -1], [0, 1, 0]],   // A
+  ay: [[0, 0, -1], [0, 1, 0], [1, 0, 0]],   // S
+  az: [[0, -1, 0], [1, 0, 0], [0, 0, 1]],   // D
+  nx: [[1, 0, 0], [0, 0, 1], [0, -1, 0]],   // Q
+  ny: [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],   // W
+  nz: [[0, 1, 0], [-1, 0, 0], [0, 0, 1]],   // E
+};
+const ROT_AXIS = { ax: [0, 1], ay: [1, 1], az: [2, 1], nx: [0, -1], ny: [1, -1], nz: [2, -1] };
+const I3 = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+const mul = (A, B) => A.map(r => [0, 1, 2].map(j => r[0] * B[0][j] + r[1] * B[1][j] + r[2] * B[2][j]));
+const app = (M, v) => M.map(r => r[0] * v[0] + r[1] * v[1] + r[2] * v[2]);
+function rotF(axis, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  if (axis === 0) return [[1, 0, 0], [0, c, -s], [0, s, c]];
+  if (axis === 1) return [[c, 0, -s], [0, 1, 0], [s, 0, c]];
+  return [[c, -s, 0], [s, c, 0], [0, 0, 1]];
+}
+
+// ---------------------------------------------------------------- 狀態
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+let W = 6, H = 5, D = 12, blockSet = 2, startLevel = 0, soundOn = true;
+let pit, piece, score, cubesPlayed, level, stepTime, highScore, possible;
+let state = 'menu';            // menu | play | pause | over
+let queue = [];
+let now = 0, pauseAt = 0;
+let popup = null;
+let stats;
+
+const idx = (x, y, z) => (z * H + y) * W + x;
+const filled = (x, y, z) => x < 0 || x >= W || y < 0 || y >= H || z < 0 || z >= D || pit[idx(x, y, z)] !== 0;
+
+function placed(M, pos) {
+  const c = piece.shape.center;
+  return piece.shape.cubes.map(q => {
+    const r = app(M, [q[0] - c[0] + .5, q[1] - c[1] + .5, q[2] - c[2] + .5]);
+    return [Math.round(r[0] - .5) + c[0] + pos[0], Math.round(r[1] - .5) + c[1] + pos[1], Math.round(r[2] - .5) + c[2] + pos[2]];
+  });
+}
+// 回傳是否重疊，以及超出邊界時應推回的位移
+function check(M, pos) {
+  let hit = false; const o = [0, 0, 0]; const dim = [W, H, D];
+  for (const q of placed(M, pos)) {
+    if (filled(q[0], q[1], q[2])) hit = true;
+    for (let a = 0; a < 3; a++) {
+      let l = 0;
+      if (q[a] < 0) l = -q[a]; else if (q[a] >= dim[a]) l = dim[a] - q[a] - 1;
+      if (Math.abs(l) > Math.abs(o[a])) o[a] = l;
+    }
+  }
+  return { hit, o };
+}
+const free = (M, pos) => !check(M, pos).hit;
+
+function hsKey() { return `pentacube.hs.${W}x${H}x${D}.${blockSet}`; }
+
+function newGame() {
+  pit = new Uint8Array(W * H * D);
+  score = 0; cubesPlayed = 0; level = startLevel;
+  stepTime = TIME_BASE * Math.pow(TIME_FACTOR, level);
+  possible = SHAPES.filter(s => blockSet === 2 || (blockSet === 1 ? s.basic : s.flat));
+  highScore = +(localStorage.getItem(hsKey()) || 0);
+  stats = { lines: [0, 0, 0, 0, 0, 0], empty: 0 };
+  queue = []; popup = null;
+  state = 'play';
+  $('menu').classList.add('hidden'); $('over').classList.add('hidden'); $('pause').classList.add('hidden');
+  $('hSetup').textContent = `${W}×${H}×${D} ${SET_NAME[blockSet]}`;
+  resize();
+  spawn();
+  updateHud();
+}
+
+function spawn() {
+  const shape = possible[Math.floor(Math.random() * possible.length)];
+  piece = {
+    shape, M: I3, pos: [W - shape.w, 0, 0], vpos: [W - shape.w, 0, 0],
+    mode: 'play', modeT: 0, stepStart: now, cursor: 0, dropPos: D - 1, dropped: false, lastKey: false, anim: null,
+  };
+  queue = [];
+  if (!free(piece.M, piece.pos)) gameOver();
+}
+
+function gameOver() {
+  state = 'over';
+  snd.over();
+  const isHigh = score > highScore;
+  if (isHigh) { highScore = score; localStorage.setItem(hsKey(), String(score)); }
+  $('overTitle').textContent = isHigh ? '新紀錄！' : '遊戲結束';
+  $('overScore').textContent = score.toLocaleString();
+  const l = stats.lines;
+  $('overInfo').innerHTML = `等級 ${level}　方塊 ${cubesPlayed}<br>消 1 層 ×${l[1]}　2 層 ×${l[2]}　3 層 ×${l[3]}　4 層 ×${l[4]}　5 層 ×${l[5]}<br>清空全井 ×${stats.empty}`;
+  $('over').classList.remove('hidden');
+  updateHud();
+}
+
+function lock() {
+  for (const q of placed(piece.M, piece.pos)) pit[idx(q[0], q[1], q[2])] = 1;
+  // 消層
+  let n = 0, k = D - 1;
+  while (k >= 0) {
+    let full = true;
+    for (let i = k * W * H, e = i + W * H; i < e; i++) if (!pit[i]) { full = false; break; }
+    if (full) { pit.copyWithin(W * H, 0, k * W * H); pit.fill(0, 0, W * H); n++; } else k--;
+  }
+  const empty = pit.every(v => v === 0);
+  // 計分
+  let dp = piece.dropped ? Math.max(0, piece.dropPos) : 0;
+  const f = dp / (D - 1), sh = piece.shape;
+  const pScore = (sh.lo + (sh.hi - sh.lo) * f) * P_LEVEL[level];
+  const lineScore = LINE_BASE[blockSet] * L_LEVEL[level] * L_COUNT[n];
+  const pitScore = empty ? LINE_BASE[blockSet] * L_LEVEL[level] * L_COUNT[2] : 0;
+  const gain = Math.max(1, Math.round((lineScore + pScore + pitScore) * DEPTH_F[D]));
+  score += gain;
+  cubesPlayed += sh.cubes.length;
+  stats.lines[n]++; if (empty) stats.empty++;
+  if (n > 0) {
+    popup = { text: empty ? `清空全井！ +${gain.toLocaleString()}` : `${n} 層　+${gain.toLocaleString()}`, t0: now };
+    empty ? snd.empty() : snd.line(n);
+  } else snd.land();
+  if (level < 10 && cubesPlayed >= (H * 15 + W * 15) * (level + 1)) {
+    level++; stepTime *= TIME_FACTOR; snd.level();
+  }
+  spawn();
+  updateHud();
+}
+
+// ---------------------------------------------------------------- 操作
+function doMove(dx, dy) {
+  const p = piece.pos, M = piece.M;
+  let t = null;
+  if (dx && dy) {
+    if (free(M, [p[0] + dx, p[1] + dy, p[2]])) t = [dx, dy];
+    else if (free(M, [p[0] + dx, p[1], p[2]])) t = [dx, 0];
+    else if (free(M, [p[0], p[1] + dy, p[2]])) t = [0, dy];
+  } else if (free(M, [p[0] + dx, p[1] + dy, p[2]])) t = [dx, dy];
+  if (t) piece.pos = [p[0] + t[0], p[1] + t[1], p[2]];
+}
+function doRotate(name) {
+  const M2 = mul(ROT[name], piece.M);
+  let pos = piece.pos;
+  const r = check(M2, pos);
+  if (r.hit) {
+    const p2 = [pos[0] + r.o[0], pos[1] + r.o[1], pos[2] + r.o[2]];
+    if (!free(M2, p2)) { snd.hit(); return; }
+    pos = p2;
+  }
+  piece.M = M2; piece.pos = pos;
+  piece.anim = { axis: ROT_AXIS[name][0], sign: ROT_AXIS[name][1], t0: now };
+  snd.rot();
+}
+function doDrop() {
+  if (piece.lastKey) return;
+  let z = piece.pos[2];
+  while (free(piece.M, [piece.pos[0], piece.pos[1], z + 1])) z++;
+  piece.pos = [piece.pos[0], piece.pos[1], z];
+  piece.mode = 'drop'; piece.modeT = now; piece.dropped = true;
+  piece.cursor = Math.max(...placed(piece.M, piece.pos).map(q => q[2]));
+  snd.drop();
+}
+function processQueue() {
+  while (queue.length && piece.mode === 'play' && state === 'play') {
+    const a = queue[0];
+    if (a.t === 'rot' && piece.anim) break;
+    queue.shift();
+    if (a.t === 'move') doMove(a.dx, a.dy);
+    else if (a.t === 'rot') doRotate(a.name);
+    else doDrop();
+  }
+}
+
+function tick() {
+  if (piece.anim && now - piece.anim.t0 >= ROT_TIME) piece.anim = null;
+  if (piece.mode === 'drop') {
+    piece.stepStart = now;
+    if (now - piece.modeT > DROP_TIME) {
+      if (!piece.lastKey) { piece.mode = 'red'; piece.modeT = now; }
+      else { piece.mode = 'play'; piece.stepStart = now - stepTime + 0.1; piece.lastKey = false; }
+    }
+  }
+  processQueue();
+  if (piece.mode === 'play' && now - piece.stepStart > stepTime) {
+    piece.stepStart = now; piece.cursor++; piece.dropPos--;
+    const maxZ = Math.max(...placed(piece.M, piece.pos).map(q => q[2]));
+    if (maxZ < piece.cursor) {
+      const p = piece.pos;
+      if (free(piece.M, [p[0], p[1], p[2] + 1])) piece.pos = [p[0], p[1], p[2] + 1];
+      else { piece.mode = 'red'; piece.modeT = now; }
+    }
+  }
+  if (piece.mode === 'red' && now - piece.modeT > RED_TIME) lock();
+}
+
+const KEYMAP = {
+  ArrowLeft: [1, 0], Numpad4: [1, 0], ArrowRight: [-1, 0], Numpad6: [-1, 0],
+  ArrowUp: [0, 1], Numpad8: [0, 1], ArrowDown: [0, -1], Numpad2: [0, -1],
+  Home: [1, 1], Numpad7: [1, 1], PageUp: [-1, 1], Numpad9: [-1, 1],
+  End: [1, -1], Numpad1: [1, -1], PageDown: [-1, -1], Numpad3: [-1, -1],
+};
+const ROTKEY = { KeyQ: 'nx', KeyW: 'ny', KeyE: 'nz', KeyA: 'ax', KeyS: 'ay', KeyD: 'az' };
+
+addEventListener('keydown', e => {
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  const c = e.code;
+  if (state === 'menu') { if (c === 'Enter') { e.preventDefault(); startFromMenu(); } return; }
+  if (c === 'Escape') { e.preventDefault(); toMenu(); return; }
+  if (c === 'KeyM') { soundOn = !soundOn; $('sSnd').value = soundOn ? '1' : '0'; saveSettings(); return; }
+  if (state === 'over') { if (c === 'Enter') { e.preventDefault(); newGame(); } return; }
+  if (c === 'KeyP') { togglePause(); return; }
+  if (state !== 'play') return;
+  let a = null;
+  if (KEYMAP[c]) a = { t: 'move', dx: KEYMAP[c][0], dy: KEYMAP[c][1] };
+  else if (ROTKEY[c]) { if (!e.repeat) a = { t: 'rot', name: ROTKEY[c] }; }
+  else if (c === 'Space') { if (!e.repeat) a = { t: 'drop' }; }
+  else return;
+  e.preventDefault();
+  if (!a) return;
+  if (piece.mode === 'red') return;
+  if (piece.mode === 'drop') { if (a.t === 'drop') return; piece.lastKey = true; }
+  if (queue.length < 6) queue.push(a);
+});
+
+function togglePause() {
+  if (state === 'play') { state = 'pause'; pauseAt = now; $('pause').classList.remove('hidden'); }
+  else if (state === 'pause') {
+    const dt = now - pauseAt;
+    piece.stepStart += dt; piece.modeT += dt; if (piece.anim) piece.anim.t0 += dt; if (popup) popup.t0 += dt;
+    state = 'play'; $('pause').classList.add('hidden');
+  }
+}
+addEventListener('blur', () => { if (state === 'play') togglePause(); });
+
+function toMenu() {
+  state = 'menu';
+  $('over').classList.add('hidden'); $('pause').classList.add('hidden'); $('menu').classList.remove('hidden');
+}
+
+// ---------------------------------------------------------------- 畫面
+let BAR = 44, vw = 600, vh = 500, CS = 100, dcam = 5;
+function resize() {
+  const availH = innerHeight - 26, availW = innerWidth - 200 - BAR - 60;
+  CS = Math.max(20, Math.min(availW / W, availH / H));
+  vw = CS * W; vh = CS * H;
+  dcam = 0.866 * Math.max(W, H);
+  const dpr = devicePixelRatio || 1;
+  cv.style.width = (BAR + vw) + 'px'; cv.style.height = vh + 'px';
+  cv.width = Math.round((BAR + vw) * dpr); cv.height = Math.round(vh * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', resize);
+
+function proj(x, y, z) {
+  const k = dcam / (dcam + z);
+  return [BAR + vw / 2 + (W / 2 - x) * CS * k, vh / 2 + (H / 2 - y) * CS * k];
+}
+function line(a, b) { ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); }
+function quad(p, fill) {
+  ctx.beginPath(); ctx.moveTo(p[0][0], p[0][1]);
+  for (let i = 1; i < 4; i++) ctx.lineTo(p[i][0], p[i][1]);
+  ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); ctx.stroke();
+}
+const HUES = [205, 130, 48, 280, 12, 170, 325];
+const layerColor = (z, l) => `hsl(${HUES[(D - 1 - z) % HUES.length]} 70% ${l}%)`;
+
+function draw() {
+  ctx.clearRect(0, 0, BAR + vw, vh);
+  // 井壁格線
+  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(47,191,113,.55)'; ctx.beginPath();
+  for (let z = 0; z <= D; z++) {
+    const a = proj(0, 0, z), b = proj(W, 0, z), c = proj(W, H, z), d = proj(0, H, z);
+    line(a, b); line(b, c); line(c, d); line(d, a);
+  }
+  for (let x = 0; x <= W; x++) { line(proj(x, 0, 0), proj(x, 0, D)); line(proj(x, H, 0), proj(x, H, D)); line(proj(x, 0, D), proj(x, H, D)); }
+  for (let y = 0; y <= H; y++) { line(proj(0, y, 0), proj(0, y, D)); line(proj(W, y, 0), proj(W, y, D)); line(proj(0, y, D), proj(W, y, D)); }
+  ctx.stroke();
+
+  // 已落定的方塊：由深到淺
+  ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.lineWidth = 1;
+  const cx = W / 2, cy = H / 2;
+  for (let z = D - 1; z >= 0; z--) {
+    const cells = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (pit[idx(x, y, z)])
+      cells.push([x, y, (x + .5 - cx) ** 2 + (y + .5 - cy) ** 2]);
+    if (!cells.length) continue;
+    cells.sort((a, b) => b[2] - a[2]);
+    const side = layerColor(z, 30), side2 = layerColor(z, 38), top = layerColor(z, 55);
+    for (const [x, y] of cells) {
+      if (cx < x && !filled(x - 1, y, z)) quad([proj(x, y, z), proj(x, y + 1, z), proj(x, y + 1, z + 1), proj(x, y, z + 1)], side);
+      if (cx > x + 1 && !filled(x + 1, y, z)) quad([proj(x + 1, y, z), proj(x + 1, y + 1, z), proj(x + 1, y + 1, z + 1), proj(x + 1, y, z + 1)], side);
+      if (cy < y && !filled(x, y - 1, z)) quad([proj(x, y, z), proj(x + 1, y, z), proj(x + 1, y, z + 1), proj(x, y, z + 1)], side2);
+      if (cy > y + 1 && !filled(x, y + 1, z)) quad([proj(x, y + 1, z), proj(x + 1, y + 1, z), proj(x + 1, y + 1, z + 1), proj(x, y + 1, z + 1)], side2);
+    }
+    for (const [x, y] of cells) {
+      if (z > 0 && pit[idx(x, y, z - 1)]) continue;
+      quad([proj(x, y, z), proj(x + 1, y, z), proj(x + 1, y + 1, z), proj(x, y + 1, z)], top);
+    }
+  }
+
+  // 落下中的積木（線框）
+  if (piece && state !== 'menu') {
+    const c = piece.shape.center, vp = piece.vpos;
+    let R = null;
+    if (piece.anim) {
+      const t = Math.min(1, (now - piece.anim.t0) / ROT_TIME);
+      R = rotF(piece.anim.axis, -piece.anim.sign * (Math.PI / 2) * (1 - t));
+    }
+    const tr = l => {
+      let r = app(piece.M, [l[0] - c[0], l[1] - c[1], l[2] - c[2]]);
+      if (R) r = app(R, r);
+      return proj(r[0] + c[0] + vp[0], r[1] + c[1] + vp[1], Math.max(-dcam * 0.8, r[2] + c[2] + vp[2]));
+    };
+    ctx.beginPath();
+    for (const [a, b] of piece.shape.edges) line(tr(a), tr(b));
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.lineWidth = 2.2; ctx.strokeStyle = piece.mode === 'red' ? '#ff5a4d' : '#ffffff';
+    ctx.stroke();
+  }
+
+  // 左側層數指示
+  const sh = vh / D;
+  for (let z = 0; z < D; z++) {
+    let any = false;
+    if (pit) for (let i = z * W * H, e = i + W * H; i < e; i++) if (pit[i]) { any = true; break; }
+    ctx.fillStyle = any ? layerColor(z, 52) : '#10141f';
+    ctx.fillRect(8, z * sh + 2, BAR - 18, sh - 4);
+  }
+
+  // 得分提示
+  if (popup) {
+    const t = (now - popup.t0) / 1.2;
+    if (t >= 1) popup = null;
+    else {
+      ctx.globalAlpha = 1 - t * t;
+      ctx.font = `700 ${Math.round(CS * 0.42)}px "Segoe UI","Microsoft JhengHei",sans-serif`;
+      ctx.textAlign = 'center'; ctx.fillStyle = '#ffb347';
+      ctx.fillText(popup.text, BAR + vw / 2, vh / 2 - t * CS * 0.5);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+function updateHud() {
+  $('hScore').textContent = score.toLocaleString();
+  $('hLevel').textContent = level;
+  $('hCubes').textContent = cubesPlayed;
+  $('hHigh').textContent = Math.max(highScore, score).toLocaleString();
+}
+
+let lastT = 0;
+function frame(ms) {
+  const t = ms / 1000, dt = Math.min(0.1, t - lastT); lastT = t;
+  now = t;
+  if (state === 'play') tick();
+  if (piece && state === 'play') {
+    const k = 1 - Math.exp(-dt * 28);
+    for (let a = 0; a < 3; a++) {
+      piece.vpos[a] += (piece.pos[a] - piece.vpos[a]) * k;
+      if (Math.abs(piece.pos[a] - piece.vpos[a]) < 0.004) piece.vpos[a] = piece.pos[a];
+    }
+  }
+  if (pit) draw();
+  requestAnimationFrame(frame);
+}
+
+// ---------------------------------------------------------------- 音效
+let ac = null;
+function tone(freq, dur, type = 'square', vol = 0.06, when = 0, slide = 0) {
+  if (!soundOn || !ac) return;
+  const t0 = ac.currentTime + when, o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t0);
+  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), t0 + dur);
+  g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g).connect(ac.destination); o.start(t0); o.stop(t0 + dur + 0.02);
+}
+const snd = {
+  rot: () => tone(520, 0.04, 'triangle', 0.05),
+  hit: () => tone(110, 0.09, 'sawtooth', 0.06),
+  drop: () => tone(300, 0.15, 'triangle', 0.05, 0, -200),
+  land: () => tone(90, 0.08, 'square', 0.07),
+  line: n => { for (let i = 0; i <= n; i++) tone(440 * Math.pow(1.26, i), 0.12, 'square', 0.06, i * 0.07); },
+  empty: () => [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.18, 'square', 0.06, i * 0.09)),
+  level: () => { tone(660, 0.1, 'triangle', 0.07, 0.15); tone(880, 0.18, 'triangle', 0.07, 0.27); },
+  over: () => [392, 330, 262, 196].forEach((f, i) => tone(f, 0.25, 'sawtooth', 0.05, i * 0.2)),
+};
+
+// ---------------------------------------------------------------- 選單
+function fill(sel, a, b) { for (let i = a; i <= b; i++) sel.add(new Option(i, i)); }
+fill($('sW'), 3, 7); fill($('sH'), 3, 7); fill($('sD'), 6, 18); fill($('sLv'), 0, 9);
+function loadSettings() {
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem('pentacube.settings') || '{}'); } catch (e) {}
+  $('sW').value = s.W || 6; $('sH').value = s.H || 5; $('sD').value = s.D || 12;
+  $('sSet').value = s.set ?? 2; $('sLv').value = s.lv || 0; $('sSnd').value = s.snd ?? 1;
+}
+function saveSettings() {
+  localStorage.setItem('pentacube.settings', JSON.stringify({
+    W: +$('sW').value, H: +$('sH').value, D: +$('sD').value, set: +$('sSet').value, lv: +$('sLv').value, snd: +$('sSnd').value }));
+}
+// 進階組有 5 格長條，井的寬高至少要 5 才放得下
+function clampDims() {
+  if (+$('sSet').value === 2) for (const id of ['sW', 'sH']) if (+$(id).value < 5) $(id).value = 5;
+}
+['sW', 'sH', 'sSet'].forEach(id => $(id).addEventListener('change', clampDims));
+function startFromMenu() {
+  clampDims(); saveSettings();
+  W = +$('sW').value; H = +$('sH').value; D = +$('sD').value;
+  blockSet = +$('sSet').value; startLevel = +$('sLv').value; soundOn = $('sSnd').value === '1';
+  if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+  if (ac && ac.state === 'suspended') ac.resume();
+  document.activeElement && document.activeElement.blur();
+  newGame();
+}
+$('btnStart').addEventListener('click', startFromMenu);
+$('btnAgain').addEventListener('click', () => newGame());
+loadSettings();
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
