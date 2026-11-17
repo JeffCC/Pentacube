@@ -37,6 +37,10 @@
   .help b { color:var(--ink); }
   .big { font-size:44px; font-weight:700; text-align:center; font-variant-numeric:tabular-nums; margin:8px 0; }
   .center { text-align:center; }
+  .hide { display:none !important; }
+  button.alt { background:transparent; color:var(--acc); border:1px solid var(--acc); margin-top:10px; font-size:15px; padding:9px; }
+  input[type=range] { width:100%; accent-color:var(--acc); }
+  #hNote { font-size:13px; color:var(--acc); line-height:1.5; min-height:2.6em; }
 </style>
 </head>
 <body>
@@ -49,6 +53,11 @@
     <div class="box"><div class="k" data-t="cubes">已放方塊數</div><div class="v sm" id="hCubes">0</div></div>
     <div class="box"><div class="k" data-t="high">最高分</div><div class="v sm" id="hHigh">0</div></div>
     <div class="box"><div class="k" data-t="setup">設定</div><div class="v sm" id="hSetup"></div></div>
+    <div class="box hide" id="demoBox">
+      <div class="k"><span data-t="speedLabel">示範速度（每塊秒數）</span>　<b id="hSpeedV"></b></div>
+      <input type="range" id="hSpeed" min="0.5" max="1.5" step="0.1">
+      <div id="hNote"></div>
+    </div>
     <div class="box" id="keys" data-t="keys">
       <b>Q W E</b> ／ <b>A S D</b>　旋轉<br>
       <b>方向鍵</b>　平移<br>
@@ -70,12 +79,26 @@
     <div class="row"><label data-t="slide">直落後可平移</label><select id="sSlide"><option value="1" data-t="on">開</option><option value="0" data-t="off">關</option></select></div>
     <div class="row"><label data-t="sound">音效</label><select id="sSnd"><option value="1" data-t="on">開</option><option value="0" data-t="off">關</option></select></div>
     <button class="go" id="btnStart" data-t="start">開始</button>
+    <button class="go alt" id="btnDemo" data-t="demo">看電腦示範</button>
     <div class="help" data-t="help">
       <b>Q / A</b> 繞水平軸前後翻轉　<b>W / S</b> 繞垂直軸左右翻轉　<b>E / D</b> 在平面上逆／順時針轉<br>
       <b>方向鍵</b>（或數字鍵盤，含斜向）平移　<b>空白鍵</b> 直落到底<br>
       直落到底後有約 0.4 秒可以再平移（線框變黃），再按一次空白鍵立刻定位。<br>
       越早按空白鍵直落、一次消越多層，分數越高；清空整口井另有加分。
     </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="demoMenu">
+  <div class="card">
+    <h1 data-t="demoTitle">電腦示範</h1>
+    <p class="sub" data-t="demoSub">進階積木組。電腦會在左下角留一口井，等直條一次消多層。</p>
+    <div class="row dims"><label data-t="pit">井（寬×高×深）</label>
+      <span style="white-space:nowrap"><select id="dW"></select> × <select id="dH"></select> × <select id="dD"></select></span></div>
+    <div class="row"><label><span data-t="speedLabel">示範速度（每塊秒數）</span>　<b id="dSpeedV"></b></label></div>
+    <input type="range" id="dSpeed" min="0.5" max="1.5" step="0.1">
+    <button class="go" id="btnDemoGo" data-t="demoStart">開始示範</button>
+    <button class="go alt" id="btnDemoBack" data-t="back">返回</button>
   </div>
 </div>
 
@@ -111,6 +134,7 @@ const ZH = LANG_Q ? LANG_Q.toLowerCase().startsWith('zh') : (navigator.language 
 const L = (zh, en) => ZH ? zh : en;
 const EN = {
   score: 'SCORE', level: 'LEVEL', cubes: 'CUBES PLAYED', high: 'HIGH SCORE', setup: 'SETUP',
+  keysDemo: '<b>− / +</b>&nbsp; speed<br><b>P</b> pause &nbsp;<b>M</b> mute &nbsp;<b>Esc</b> menu',
   keys: '<b>Q W E</b> / <b>A S D</b>&nbsp; rotate<br><b>Arrows</b>&nbsp; move<br><b>Space</b>&nbsp; drop<br><b>P</b> pause &nbsp;<b>M</b> mute &nbsp;<b>Esc</b> menu',
   tagline: 'Stack blocks in the pit. Fill a layer to clear it.',
   pit: 'Pit (W × H × D)', set: 'Block set', set0: 'Flat', set1: 'Basic', set2: 'Extended (all blocks)',
@@ -119,12 +143,15 @@ const EN = {
     + '<b>Arrow keys</b> (or numpad, diagonals included) move &nbsp;<b>Space</b> drops to the bottom<br>'
     + 'After a drop you get about 0.4 s to slide the block (outline turns yellow); press Space again to lock at once.<br>'
     + 'Drop early and clear several layers at once for a higher score. Emptying the whole pit earns a bonus.',
+  demo: 'WATCH DEMO', demoTitle: 'DEMO', demoSub: 'Extended block set. The computer keeps a well in the bottom-left corner and waits for a straight bar to clear several layers at once.',
+  speedLabel: 'Demo speed (seconds per block)', demoStart: 'START DEMO', back: 'BACK',
   again: 'PLAY AGAIN', overHint: 'Enter to play again, Esc for the menu', paused: 'Paused', resume: 'Press P to resume',
 };
 if (!ZH) {
   document.documentElement.lang = 'en';
   document.querySelectorAll('[data-t]').forEach(el => { el.innerHTML = EN[el.dataset.t]; });
 }
+const KEYS_HTML = document.getElementById('keys').innerHTML;
 
 // ---------------------------------------------------------------- 積木定義
 // 座標系：x 向螢幕左、y 向螢幕上、z 向井底。 [高分, 低分, 平面組, 基本組, 方塊]
@@ -244,6 +271,7 @@ function rotF(axis, a) {
 const $ = id => document.getElementById(id);
 const cv = $('cv'), ctx = cv.getContext('2d');
 let W = 6, H = 5, D = 12, blockSet = 2, startLevel = 0, soundOn = true, slideOn = true;
+let demo = false, demoSpeed = 1.0, demoRun = 0;
 let pit, piece, score, cubesPlayed, level, stepTime, highScore, possible;
 let state = 'menu';            // menu | play | pause | over
 let queue = [];
@@ -288,6 +316,11 @@ function newGame() {
   queue = []; popup = null;
   state = 'play';
   $('menu').classList.add('hidden'); $('over').classList.add('hidden'); $('pause').classList.add('hidden');
+  $('demoMenu').classList.add('hidden');
+  $('demoBox').classList.toggle('hide', !demo);
+  $('title').textContent = demo ? 'PENTACUBE · DEMO' : 'PENTACUBE';
+  $('keys').innerHTML = demo ? L('<b>− / +</b>　調整速度<br><b>P</b> 暫停　<b>M</b> 靜音　<b>Esc</b> 選單', EN.keysDemo) : KEYS_HTML;
+  $('hNote').textContent = '';
   $('hSetup').textContent = `${W}×${H}×${D} ${SET_NAME[blockSet]}`;
   resize();
   spawn();
@@ -302,14 +335,15 @@ function spawn() {
   };
   queue = [];
   if (!free(piece.M, piece.pos)) gameOver();
+  else if (demo) piece.bot = botPlan();
 }
 
 function gameOver() {
   state = 'over';
   snd.over();
-  const isHigh = score > highScore;
+  const isHigh = !demo && score > highScore;
   if (isHigh) { highScore = score; localStorage.setItem(hsKey(), String(score)); }
-  $('overTitle').textContent = isHigh ? L('新紀錄！', 'New record!') : L('遊戲結束', 'Game over');
+  $('overTitle').textContent = demo ? L('示範結束', 'Demo over') : isHigh ? L('新紀錄！', 'New record!') : L('遊戲結束', 'Game over');
   $('overScore').textContent = score.toLocaleString();
   const l = stats.lines;
   $('overInfo').innerHTML = L(
@@ -317,6 +351,10 @@ function gameOver() {
     `Level ${level} · ${cubesPlayed} cubes<br>Layers cleared at once: 1 ×${l[1]} · 2 ×${l[2]} · 3 ×${l[3]} · 4 ×${l[4]} · 5 ×${l[5]}<br>Pit emptied ×${stats.empty}`);
   $('over').classList.remove('hidden');
   updateHud();
+  if (demo) {                                   // 示範模式自動重來
+    const id = ++demoRun;
+    setTimeout(() => { if (demo && state === 'over' && id === demoRun) newGame(); }, 4000);
+  }
 }
 
 function lock() {
@@ -405,10 +443,11 @@ function processQueue() {
 
 function tick() {
   if (piece.anim && now - piece.anim.t0 >= ROT_TIME) piece.anim = null;
+  if (demo) { piece.stepStart = now; botTick(); }
   if (piece.mode === 'drop') {
     piece.stepStart = now;
     if (now - piece.modeT > DROP_TIME) {
-      const g = slideOn ? SLIDE_TIME : (queue.length ? 0.1 : 0);
+      const g = demo ? 0 : slideOn ? SLIDE_TIME : (queue.length ? 0.1 : 0);
       if (g > 0) { piece.mode = 'play'; piece.grace = now + g; }
       else { piece.mode = 'red'; piece.modeT = now; }
     }
@@ -446,12 +485,22 @@ const ROTKEY = { KeyQ: 'nx', KeyW: 'ny', KeyE: 'nz', KeyA: 'ax', KeyS: 'ay', Key
 addEventListener('keydown', e => {
   if (e.ctrlKey || e.altKey || e.metaKey) return;
   const c = e.code;
-  if (state === 'menu') { if (c === 'Enter') { e.preventDefault(); startFromMenu(); } return; }
+  if (state === 'menu') {
+    const inDemo = !$('demoMenu').classList.contains('hidden');
+    if (c === 'Enter') { e.preventDefault(); inDemo ? startDemo() : startFromMenu(); }
+    else if (c === 'Escape' && inDemo) toMenu();
+    return;
+  }
   if (c === 'Escape') { e.preventDefault(); toMenu(); return; }
   if (c === 'KeyM') { soundOn = !soundOn; $('sSnd').value = soundOn ? '1' : '0'; saveSettings(); return; }
   if (state === 'over') { if (c === 'Enter') { e.preventDefault(); newGame(); } return; }
   if (c === 'KeyP') { togglePause(); return; }
   if (state !== 'play') return;
+  if (demo) {
+    if (c === 'Minus' || c === 'NumpadSubtract') setDemoSpeed(demoSpeed - 0.1);
+    else if (c === 'Equal' || c === 'NumpadAdd') setDemoSpeed(demoSpeed + 0.1);
+    return;
+  }
   let a = null;
   if (KEYMAP[c]) a = { t: 'move', dx: KEYMAP[c][0], dy: KEYMAP[c][1] };
   else if (ROTKEY[c]) { if (!e.repeat) a = { t: 'rot', name: ROTKEY[c] }; }
@@ -475,8 +524,9 @@ function togglePause() {
 addEventListener('blur', () => { if (state === 'play') togglePause(); });
 
 function toMenu() {
-  state = 'menu';
-  $('over').classList.add('hidden'); $('pause').classList.add('hidden'); $('menu').classList.remove('hidden');
+  state = 'menu'; demo = false;
+  $('over').classList.add('hidden'); $('pause').classList.add('hidden'); $('demoMenu').classList.add('hidden');
+  $('menu').classList.remove('hidden');
 }
 
 // ---------------------------------------------------------------- 畫面
@@ -517,6 +567,14 @@ function draw() {
   for (let x = 0; x <= W; x++) { line(proj(x, 0, 0), proj(x, 0, D)); line(proj(x, H, 0), proj(x, H, D)); line(proj(x, 0, D), proj(x, H, D)); }
   for (let y = 0; y <= H; y++) { line(proj(0, y, 0), proj(0, y, D)); line(proj(W, y, 0), proj(W, y, D)); line(proj(0, y, D), proj(W, y, D)); }
   ctx.stroke();
+
+  if (demo) {                                   // 標出保留的井
+    ctx.strokeStyle = 'rgba(255,179,71,.8)'; ctx.lineWidth = 1.5; ctx.beginPath();
+    for (const [x, y] of [[W - 1, 0], [W, 0], [W, 1], [W - 1, 1]]) line(proj(x, y, 0), proj(x, y, D));
+    line(proj(W - 1, 1, 0), proj(W, 1, 0)); line(proj(W - 1, 0, 0), proj(W - 1, 1, 0));
+    line(proj(W - 1, 1, D), proj(W, 1, D)); line(proj(W - 1, 0, D), proj(W - 1, 1, D));
+    ctx.stroke();
+  }
 
   // 已落定的方塊：由深到淺
   ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.lineWidth = 1;
@@ -587,7 +645,7 @@ function updateHud() {
   $('hScore').textContent = score.toLocaleString();
   $('hLevel').textContent = level;
   $('hCubes').textContent = cubesPlayed;
-  $('hHigh').textContent = Math.max(highScore, score).toLocaleString();
+  $('hHigh').textContent = (demo ? highScore : Math.max(highScore, score)).toLocaleString();
 }
 
 let lastT = 0;
@@ -604,6 +662,136 @@ function frame(ms) {
   }
   if (pit) draw();
   requestAnimationFrame(frame);
+}
+
+// ---------------------------------------------------------------- 示範模式（電腦自己玩）
+// 策略：左下角（x=W-1, y=0）整條保留當井，其餘位置一層層鋪平、不留被蓋住的空格；
+//       等到直條積木來，直插入井一次消多層。
+const ORIENTS = (() => {
+  const key = M => JSON.stringify(M.map(r => r.map(v => v + 0)));
+  const first = { M: I3, seq: [] }, seen = new Map([[key(I3), first]]), q = [first];
+  while (q.length) {
+    const o = q.shift();
+    for (const name in ROT) {
+      const M = mul(ROT[name], o.M), k = key(M);
+      if (!seen.has(k)) { const n = { M, seq: [...o.seq, name] }; seen.set(k, n); q.push(n); }
+    }
+  }
+  return [...seen.values()];
+})();
+// dangerH / twoH：堆到離井口剩幾層時，才允許只消 1 層 / 只消 2 層
+const BOT = { hole: 600, bump: 6, pit: 10, land: 20, well: 800, wellDanger: 60, ready: 40, clear: 350, single: 250, dangerH: 4, twoH: 6 };
+
+function analyze(g) {
+  const wx = W - 1, wy = 0, h = new Int16Array(W * H);
+  let holes = 0, bump = 0, well = 0, maxH = 0, sumH = 0, ready = 0, pits = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (x === wx && y === wy) { for (let z = 0; z < D; z++) if (g[idx(x, y, z)]) well++; h[y * W + x] = -1; continue; }
+    let top = -1;
+    for (let z = 0; z < D; z++) if (g[idx(x, y, z)]) { top = z; break; }
+    const hh = top < 0 ? 0 : D - top;
+    h[y * W + x] = hh; sumH += hh; if (hh > maxH) maxH = hh;
+    if (top >= 0) for (let z = top + 1; z < D; z++) if (!g[idx(x, y, z)]) holes++;
+  }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const a = h[y * W + x]; if (a < 0) continue;
+    if (x + 1 < W && h[y * W + x + 1] >= 0) bump += Math.abs(a - h[y * W + x + 1]);
+    if (y + 1 < H && h[(y + 1) * W + x] >= 0) bump += Math.abs(a - h[(y + 1) * W + x]);
+    // 四周都比較高的窄坑：很難用立體積木補平
+    let m = 99;
+    for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) {
+      if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+      const b = h[ny * W + nx]; if (b >= 0 && b < m) m = b;
+    }
+    if (m < 99 && m > a) pits += (m - a) * (m - a + 1) / 2;
+  }
+  for (let z = D - 1; z >= 0; z--) {
+    let full = true;
+    for (let y = 0; y < H && full; y++) for (let x = 0; x < W; x++)
+      if (!(x === wx && y === wy) && !g[idx(x, y, z)]) { full = false; break; }
+    if (full && !g[idx(wx, wy, z)]) ready++;     // 只差井那一格就滿的層
+  }
+  return { holes, bump, well, maxH, sumH, ready, pits };
+}
+
+// 列舉所有「擺好方向、平移到定位、直落」的放法，挑評分最高的
+function botChoose() {
+  const cur = analyze(pit), danger = cur.maxH >= D - BOT.dangerH, mid = cur.maxH >= D - BOT.twoH;
+  const fits = (off, x, y, z) => off.every(q => !filled(q[0] + x, q[1] + y, q[2] + z));
+  let best = null;
+  for (const o of ORIENTS) {
+    const off = placed(o.M, [0, 0, 0]);
+    const mn = [0, 1, 2].map(a => Math.min(...off.map(q => q[a]))), mx = [0, 1].map(a => Math.max(...off.map(q => q[a])));
+    for (let y = -mn[1]; y <= H - 1 - mx[1]; y++) for (let x = -mn[0]; x <= W - 1 - mx[0]; x++) {
+      let z = -mn[2];
+      if (!fits(off, x, y, z)) continue;
+      while (fits(off, x, y, z + 1)) z++;
+      const g = pit.slice();
+      let land = 0;
+      for (const q of off) { g[idx(q[0] + x, q[1] + y, q[2] + z)] = 1; land += D - (q[2] + z); }
+      let n = 0, k = D - 1;
+      while (k >= 0) {
+        let full = true;
+        for (let i = k * W * H, e = i + W * H; i < e; i++) if (!g[i]) { full = false; break; }
+        if (full) { g.copyWithin(W * H, 0, k * W * H); g.fill(0, 0, W * H); n++; } else k--;
+      }
+      const a = analyze(g);
+      let s = -a.holes * BOT.hole - a.bump * BOT.bump - a.pits * BOT.pit - land * BOT.land - a.well * (danger ? BOT.wellDanger : BOT.well)
+        + a.ready * BOT.ready - o.seq.length * 0.3;
+      if (n >= 3) s += BOT.clear * n * n;
+      else if (n === 2) s += mid ? BOT.clear * 4 : -BOT.single;
+      else if (n === 1) s += danger ? BOT.clear : -BOT.single;
+      if (a.maxH >= D - 2) s -= 3000;
+      if (!best || s > best.s) best = { s, M: o.M, seq: o.seq, x, y, z, n };
+    }
+  }
+  return { best, cur };
+}
+
+function botPlan() {
+  const { best, cur } = botChoose();
+  if (!best) return { rots: [], x: piece.pos[0], y: piece.pos[1], key: '', steps: 1, next: now, tries: 0 };
+  $('hNote').textContent = best.n >= 2 ? L(`直條入井，一次消 ${best.n} 層！`, `Bar into the well: ${best.n} layers at once!`)
+    : best.n === 1 ? L('太高了，先消 1 層', 'Too high: clearing 1 layer')
+    : L(`左下角留井，已鋪好 ${cur.ready} 層，等直條`, `Keeping the corner well. ${cur.ready} layer${cur.ready === 1 ? '' : 's'} ready, waiting for a bar`);
+  const steps = best.seq.length + Math.max(Math.abs(best.x - piece.pos[0]), Math.abs(best.y - piece.pos[1])) + 1;
+  return { rots: best.seq.slice(), x: best.x, y: best.y, key: JSON.stringify(best.M), steps, next: now + botInterval(steps), tries: 0 };
+}
+const botInterval = steps => Math.max(0.02, (demoSpeed - DROP_TIME - RED_TIME) / steps);
+
+function botTick() {
+  const b = piece.bot;
+  if (!b || piece.mode !== 'play' || now < b.next) return;
+  b.next = now + botInterval(b.steps);
+  if (b.rots.length) { doRotate(b.rots.shift()); return; }
+  const dx = Math.sign(b.x - piece.pos[0]), dy = Math.sign(b.y - piece.pos[1]);
+  if ((dx || dy) && b.tries < 30 && JSON.stringify(piece.M) === b.key) {
+    const p0 = piece.pos; b.tries++;
+    doMove(dx, dy);
+    if (piece.pos === p0) b.tries = 99;          // 被擋住就直接落下
+    return;
+  }
+  doDrop();
+}
+
+function setDemoSpeed(v) {
+  demoSpeed = Math.min(1.5, Math.max(0.5, Math.round(v * 10) / 10));
+  for (const id of ['hSpeed', 'dSpeed']) $(id).value = demoSpeed;
+  for (const id of ['hSpeedV', 'dSpeedV']) $(id).textContent = demoSpeed.toFixed(1) + L(' 秒', ' s');
+  saveDemo();
+}
+function saveDemo() {
+  localStorage.setItem('pentacube.demo', JSON.stringify({ W: +$('dW').value, H: +$('dH').value, D: +$('dD').value, speed: demoSpeed }));
+}
+function openDemoMenu() { $('menu').classList.add('hidden'); $('demoMenu').classList.remove('hidden'); }
+function startDemo() {
+  saveDemo();
+  W = +$('dW').value; H = +$('dH').value; D = +$('dD').value;
+  blockSet = 2; startLevel = 0; soundOn = $('sSnd').value === '1'; demo = true;
+  if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+  if (ac && ac.state === 'suspended') ac.resume();
+  document.activeElement && document.activeElement.blur();
+  newGame();
 }
 
 // ---------------------------------------------------------------- 音效
@@ -656,6 +844,19 @@ function startFromMenu() {
 }
 $('btnStart').addEventListener('click', startFromMenu);
 $('btnAgain').addEventListener('click', () => newGame());
+fill($('dW'), 5, 7); fill($('dH'), 5, 7); fill($('dD'), 6, 18);
+(() => {
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem('pentacube.demo') || '{}'); } catch (e) {}
+  $('dW').value = s.W || 6; $('dH').value = s.H || 5; $('dD').value = s.D || 12;
+  setDemoSpeed(s.speed || 1.0);
+})();
+for (const id of ['hSpeed', 'dSpeed']) $(id).addEventListener('input', e => setDemoSpeed(+e.target.value));
+$('hSpeed').addEventListener('change', e => e.target.blur());
+for (const id of ['dW', 'dH', 'dD']) $(id).addEventListener('change', saveDemo);
+$('btnDemo').addEventListener('click', openDemoMenu);
+$('btnDemoGo').addEventListener('click', startDemo);
+$('btnDemoBack').addEventListener('click', toMenu);
 loadSettings();
 resize();
 requestAnimationFrame(frame);
